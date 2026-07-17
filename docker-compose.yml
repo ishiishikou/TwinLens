@@ -1,0 +1,24 @@
+services:
+  twinlens:
+    build: .
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      TWINLENS_API_TOKEN: ${TWINLENS_API_TOKEN:?run python scripts/generate_env.py}
+      TWINLENS_FERNET_KEY: ${TWINLENS_FERNET_KEY:?run python scripts/generate_env.py}
+      TWINLENS_ACCEPT_THRESHOLD: ${TWINLENS_ACCEPT_THRESHOLD:-0.42}
+      TWINLENS_OTHER_THRESHOLD: ${TWINLENS_OTHER_THRESHOLD:-0.28}
+      TWINLENS_MARGIN_THRESHOLD: ${TWINLENS_MARGIN_THRESHOLD:-0.08}
+    volumes:
+      - twinlens-data:/data
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  twinlens-data:
