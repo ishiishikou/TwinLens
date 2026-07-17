@@ -1,97 +1,63 @@
 # TwinLens
 
-TwinLensは、家族が登録した写真を用いて、写真内の双子を **双子A / 双子B / 判定不能 / 双子以外または顔なし** に分類する、プライバシー優先の家庭内WebアプリMVPです。
+家庭内で、写真に写った双子を **双子A / 双子B / 判定不能 / 双子以外または顔なし** に分けるローカルWeb MVPです。
 
-> 本アプリは双子の識別精度を保証しません。一般的な顔埋め込みモデルで対象の双子を分離できるか、実写真による評価が必須です。
+- 写真は外部APIへ送信しません。
+- 元画像は保存しません。
+- OpenCV YuNetで複数顔を検出し、SFace埋め込みを比較します。
+- 埋め込みはFernetで暗号化してSQLiteに保存します。
+- 迷う場合は強制判定せず `判定不能` にします。
 
-## MVPの特徴
-
-- OpenCV YuNetで複数顔を検出
-- OpenCV SFaceで位置合わせと顔特徴量抽出
-- A/Bそれぞれの上位近傍とセントロイドを比較
-- 絶対類似度、A/Bの差、画像品質を満たす場合だけ人物を確定
-- 元画像を保存しない
-- 顔特徴量はFernetで暗号化してSQLiteへ保存
-- 結果訂正を品質条件付きで参照データへ反映
-- CPUのみでDocker起動
-
-技術判断、方式比較、評価計画、法務・ライセンス上の注意は [技術提案書](docs/TECHNICAL_PROPOSAL.md) を参照してください。
+設計根拠と限界は [技術提案書](docs/TECHNICAL_PROPOSAL.md) を参照してください。
 
 ## 起動
 
-必要条件:
+```bash
+cp .env.example .env
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+python -c "import os,base64; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"
+```
 
-- Docker / Docker Compose
-- 初回Docker build時にOpenCV Zooからモデルを取得できるインターネット接続
-- Python 3（安全な `.env` の生成だけに使用）
+1行目の出力を `.env` の `TWINLENS_TOKEN`、2行目を `TWINLENS_KEY` に設定します。
 
 ```bash
-python scripts/generate_env.py
 docker compose up --build
 ```
 
-ブラウザで `http://localhost:8000` を開き、`.env` の `TWINLENS_API_TOKEN` を入力してください。Composeは既定で `127.0.0.1` のみに公開します。家庭LANの別端末から利用する場合は、安易にポートを全公開せず、HTTPSリバースプロキシ、ファイアウォール、アクセス元制限を設定してください。
+`http://localhost:8000` を開き、トークンを入力してください。
 
-## 初回登録
+スマートフォンから同一LAN内のPCへ接続する場合だけ `.env` に `TWINLENS_BIND=0.0.0.0` を設定し、OSファイアウォールで家庭内LAN以外を遮断してください。TLSなしでインターネット公開しないでください。
 
-1. 双子Aを選び、本人だけが写った写真を複数登録します。
-2. 双子Bも同様に登録します。
-3. 各3枚で判定ロジックは動きますが、各30〜50枚を推奨します。
-4. 連写だけを増やさず、角度、表情、照明、時期を分散させます。
-5. 判定用写真は登録写真と別の撮影セッションにします。
+## 最短の検証手順
+
+1. 双子A、双子Bを各20枚以上登録する。
+2. 連写や同一動画の切り出しを、登録用と評価用にまたがって使わない。
+3. 未登録の評価写真で判定する。
+4. 誤判定より判定不能を優先し、実測から閾値を調整する。
+5. 訂正画像を参照データへ追加する場合は、顔が鮮明で本人確認できる写真だけを選ぶ。
 
 ## API
 
-すべての保護APIは `X-TwinLens-Token` ヘッダーが必要です。
+| Method | Path | 用途 |
+|---|---|---|
+| GET | `/api/health` | ヘルスチェック |
+| GET | `/api/status` | 登録数と閾値 |
+| POST | `/api/enroll/A` | 双子Aの写真を複数登録 |
+| POST | `/api/enroll/B` | 双子Bの写真を複数登録 |
+| POST | `/api/identify` | 1枚の写真内の全顔を判定 |
+| POST | `/api/corrections/{id}` | 判定訂正、任意で参照追加 |
 
-- `GET /api/v1/health`
-- `GET /api/v1/stats`
-- `POST /api/v1/enroll/A`
-- `POST /api/v1/enroll/B`
-- `POST /api/v1/identify`
-- `POST /api/v1/corrections`
-- `DELETE /api/v1/data`
+`/api/health` 以外は `X-API-Token` ヘッダーが必要です。
 
-FastAPIのOpenAPI JSONは `/openapi.json` で確認できます。
-
-## 閾値
-
-既定値は安全側の仮値であり、対象データで調整してください。
-
-```env
-TWINLENS_OTHER_THRESHOLD=0.28
-TWINLENS_ACCEPT_THRESHOLD=0.42
-TWINLENS_MARGIN_THRESHOLD=0.08
-```
-
-`ACCEPT_THRESHOLD` や `MARGIN_THRESHOLD` を下げると判定数は増えますが、双子A/Bの取り違えも増える可能性があります。Accuracyではなく、A→B、B→A、未登録人物誤受入、判定不能率を個別に測定してください。
-
-## 開発・テスト
+## 開発チェック
 
 ```bash
-python -m venv .venv
-. .venv/bin/activate
-pip install -r requirements.txt
-pytest -q
-python -m compileall app
+python -m unittest discover -s tests -v
 ```
 
-モデルを含む統合確認:
+## MVPの意図的な上限
 
-```bash
-python scripts/generate_env.py  # .envがない場合のみ
-docker compose build
-docker compose up
-```
-
-## セキュリティ上の注意
-
-- `.env` はGitへコミットしないでください。暗号鍵を失うと保存特徴量を復号できません。
-- `.env` とDocker volumeを同じ場所へ無暗号でバックアップしないでください。
-- 元画像を保存しなくても、顔特徴量は本人照合に利用できる生体テンプレートです。
-- 一般公開前に、OIDC認証、HTTPS、CSRF対策、レート制限、監査、鍵管理、テナント分離、脆弱性診断が必要です。
-- Dockerfileはモデル取得元のコミットとSHA-256を固定しています。モデル更新時はライセンス、ハッシュ、評価結果を再確認してください。
-
-## ライセンス
-
-TwinLens本体はMIT Licenseです。依存ライブラリと学習済みモデルはそれぞれの条件に従います。詳細は [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) を参照してください。
+- 参照特徴量はSQLiteから全件読み、線形探索します。家庭内の数百件では十分です。
+- Flask組み込みサーバーを単一スレッドで使います。ローカルMVP用であり公開サービス用ではありません。
+- 自動再学習はしません。まず閾値調整で改善できるか測定します。
+- 精度は対象の双子、年齢、撮影条件で変わり、保証できません。
