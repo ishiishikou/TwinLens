@@ -5,7 +5,7 @@ TwinLens downloads model files during the Docker build. They are not committed t
 - OpenCV: Apache-2.0.
 - OpenCV Zoo repository: Apache-2.0; model-specific terms apply.
 - YuNet directory and model: MIT according to the model directory README.
-- SFace directory/model: check the model directory license before every public or commercial release.
+- SFace directory and model: Apache-2.0 according to the model directory README and LICENSE.
 - FastAPI: MIT.
 - Uvicorn: BSD-3-Clause.
 - NumPy: BSD-3-Clause.
