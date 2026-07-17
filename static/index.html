@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TwinLens</title>
+<style>
+body{font-family:system-ui,sans-serif;max-width:760px;margin:auto;padding:16px;background:#f5f5f5;color:#222}main,section{display:grid;gap:12px}section{background:white;padding:16px;border-radius:12px}input,button,select{font:inherit;padding:10px}button{cursor:pointer}.row{display:flex;gap:8px;flex-wrap:wrap}.result{border:1px solid #ddd;padding:12px;border-radius:8px}.muted{color:#666;font-size:.9rem}pre{white-space:pre-wrap}h1,h2{margin:.2em 0}
+</style>
+</head>
+<body><main>
+<h1>TwinLens</h1><p class="muted">写真は保存しません。顔特徴量のみ暗号化して保存します。</p>
+<section><h2>接続</h2><input id="token" type="password" placeholder="APIトークン"><button onclick="refreshStatus()">状態確認</button><pre id="status"></pre></section>
+<section><h2>登録</h2><div class="row"><select id="person"><option value="A">双子A</option><option value="B">双子B</option></select><input id="enrollFiles" type="file" accept="image/*" multiple></div><button onclick="enroll()">登録する</button><pre id="enrollResult"></pre></section>
+<section><h2>判定</h2><input id="identifyFile" type="file" accept="image/*"><button onclick="identify()">判定する</button><div id="results"></div></section>
+</main>
+<script>
+const labels={A:'双子A',B:'双子B',uncertain:'判定不能',other:'双子以外、または顔を検出できない'};
+const headers=()=>({'X-API-Token':document.querySelector('#token').value});
+async function api(url,options={}){options.headers={...headers(),...(options.headers||{})};const r=await fetch(url,options);const j=await r.json();if(!r.ok)throw Error(j.error||r.statusText);return j}
+async function refreshStatus(){try{status.textContent=JSON.stringify(await api('/api/status'),null,2)}catch(e){status.textContent=e.message}}
+async function enroll(){const fd=new FormData();for(const f of enrollFiles.files)fd.append('files',f);try{enrollResult.textContent=JSON.stringify(await api('/api/enroll/'+person.value,{method:'POST',body:fd}),null,2);refreshStatus()}catch(e){enrollResult.textContent=e.message}}
+async function identify(){const fd=new FormData();fd.append('image',identifyFile.files[0]);results.textContent='判定中…';try{const data=await api('/api/identify',{method:'POST',body:fd});if(!data.faces.length){results.textContent=labels.other;return}results.innerHTML='';data.faces.forEach((face,i)=>{const d=document.createElement('div');d.className='result';d.innerHTML=`<strong>顔 ${i+1}: ${labels[face.label]}</strong><p class="muted">A ${face.score_a} / B ${face.score_b} / 品質 ${face.quality}</p><div class="row"><select>${Object.entries(labels).map(([k,v])=>`<option value="${k}" ${k===face.label?'selected':''}>${v}</option>`).join('')}</select><label><input type="checkbox">参照写真に追加</label><button>訂正を保存</button></div>`;d.querySelector('button').onclick=async()=>{const s=d.querySelector('select'),c=d.querySelector('input');try{await api('/api/corrections/'+face.id,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({label:s.value,add_reference:c.checked})});d.querySelector('button').textContent='保存済み';refreshStatus()}catch(e){alert(e.message)}};results.appendChild(d)})}catch(e){results.textContent=e.message}}
+</script></body></html>
